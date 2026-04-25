@@ -1,14 +1,19 @@
 use neo4rs::{Graph};
+use dotenvy::dotenv;
 
 #[tokio::main]
 async fn main() -> Result<(), neo4rs::Error>{
-    test_connection().await?;
+    dotenv().ok();
+    let uri = std::env::var("NEO4J_URI").unwrap_or_else(|_| "bolt://localhost:7687".to_string());
+    let user = std::env::var("NEO4J_USER").unwrap_or_else(|_| "neo4j".to_string());
+    let password = std::env::var("NEO4J_PASSWORD").unwrap_or_else(|_| "password123".to_string());
+
+    test_connection(&uri, &user, &password).await?;
     Ok(())
 }
 
-async fn test_connection() -> Result<(), neo4rs::Error>{
-    // create connection
-    let graph = Graph::new("bolt://localhost:7687", "neo4j", "password123").await?;
+async fn test_connection(uri: &str, user: &str, password: &str) -> Result<(), neo4rs::Error>{
+    let graph = Graph::new(uri, user, password).await?;
 
     // test query
     let mut result = graph.execute(
