@@ -1,0 +1,7 @@
+target/
+.git/
+.env
+.claude/
+README.md
+run.sh
+docker-compose.yml
