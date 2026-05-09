@@ -28,9 +28,9 @@ RUN cargo build --release
 # =============================================================================
 FROM debian:bookworm-slim
 
-# Install runtime dependencies (ca-certificates for HTTPS, openssl)
+# Install runtime dependencies (ca-certificates for HTTPS, curl for health check)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates && \
+    apt-get install -y --no-install-recommends ca-certificates curl && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -43,6 +43,10 @@ EXPOSE 3000
 
 # Set default environment variables
 ENV RUST_LOG=info
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:3000/health || exit 1
 
 # Run the binary
 CMD ["./product-twin"]
