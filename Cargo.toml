@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 neo4rs = "0.8"
+redis = { version = "0.27", features = ["tokio-comp"] }
 dotenvy = "0.15"
 axum = "0.8"
 log = "0.4"
