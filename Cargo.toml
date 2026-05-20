@@ -9,5 +9,6 @@ neo4rs = "0.8"
 redis = { version = "0.27", features = ["tokio-comp"] }
 dotenvy = "0.15"
 axum = "0.8"
+serde = { version = "1", features = ["derive"] }
 log = "0.4"
 env_logger = "0.11"
