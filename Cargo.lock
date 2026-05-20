@@ -990,11 +990,8 @@ dependencies = [
  "env_logger",
  "log",
  "neo4rs",
-<<<<<<< HEAD
  "redis",
-=======
  "serde",
->>>>>>> main
  "tokio",
 ]
 
