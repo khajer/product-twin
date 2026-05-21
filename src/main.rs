@@ -14,6 +14,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const SESSION_COOKIE: &str = "session";
 const SESSION_VALUE: &str = "authenticated";
 
+const LOGIN_HTML: &str = include_str!("./static/login.html");
+const LANDING_HTML: &str = include_str!("./static/landing.html");
+
 #[derive(Serialize)]
 struct HealthResponse {
     status: String,
@@ -78,38 +81,7 @@ async fn login_page(Query(q): Query<LoginQuery>) -> Html<String> {
     } else {
         ""
     };
-    Html(format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Login</title>
-<style>
-  body {{ font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f5f5f5; }}
-  form {{ background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.1); width: 320px; }}
-  h1 {{ margin: 0 0 1rem; font-size: 1.25rem; }}
-  label {{ display: block; margin-top: .75rem; font-size: .875rem; }}
-  input {{ width: 100%; padding: .5rem; margin-top: .25rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }}
-  button {{ width: 100%; margin-top: 1rem; padding: .6rem; border: 0; border-radius: 4px; background: #2563eb; color: #fff; font-weight: 600; cursor: pointer; }}
-  button:hover {{ background: #1d4ed8; }}
-  .error {{ color: #b91c1c; font-size: .875rem; margin: 0 0 .5rem; }}
-</style>
-</head>
-<body>
-<form method="post" action="/login">
-  <h1>Sign in</h1>
-  {error_banner}
-  <label>Username
-    <input name="username" autocomplete="username" required autofocus>
-  </label>
-  <label>Password
-    <input name="password" type="password" autocomplete="current-password" required>
-  </label>
-  <button type="submit">Login</button>
-</form>
-</body>
-</html>"#
-    ))
+    Html(LOGIN_HTML.replace("{{error_banner}}", error_banner))
 }
 
 async fn login_submit(jar: CookieJar, Form(form): Form<LoginForm>) -> impl IntoResponse {
@@ -141,13 +113,7 @@ async fn logout(jar: CookieJar) -> impl IntoResponse {
 
 async fn landing_page(jar: CookieJar) -> Result<Html<&'static str>, Redirect> {
     match jar.get(SESSION_COOKIE) {
-        Some(c) if c.value() == SESSION_VALUE => Ok(Html(
-            r#"<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Landing</title></head>
-<body></body>
-</html>"#,
-        )),
+        Some(c) if c.value() == SESSION_VALUE => Ok(Html(LANDING_HTML)),
         _ => Err(Redirect::to("/login")),
     }
 }
