@@ -49,7 +49,7 @@ services:
       - neo4j-network
 
   redis:
-    image: redis:8-alpine
+    image: redis:8.8-rc1-alpine
     container_name: redis
     ports:
       - "6379:6379"
