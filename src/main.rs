@@ -2,7 +2,7 @@ use axum::{
     extract::Query,
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
-    Form, Json, Router,
+    Extension, Form, Json, Router,
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use dotenvy::dotenv;
@@ -10,6 +10,8 @@ use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+mod db;
 
 const SESSION_COOKIE: &str = "session";
 const SESSION_VALUE: &str = "authenticated";
@@ -45,12 +47,17 @@ async fn main() {
 
     info!("Starting server...");
 
+    let db_path = env::var("SQLITE_PATH").unwrap_or_else(|_| "data/product-twin.db".into());
+    let sqlite = db::connect(&db_path).expect("failed to open SQLite database");
+    info!("SQLite database opened at {db_path}");
+
     let app = Router::new()
         .route("/", get(hello_world))
         .route("/health", get(health_check))
         .route("/login", get(login_page).post(login_submit))
         .route("/logout", post(logout))
-        .route("/landing", get(landing_page));
+        .route("/landing", get(landing_page))
+        .layer(Extension(sqlite));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     info!("Server running on http://localhost:3000");
