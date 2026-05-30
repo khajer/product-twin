@@ -1,6 +1,7 @@
 use axum::{
-    extract::Query,
-    response::{Html, IntoResponse, Redirect},
+    extract::{FromRequestParts, Query},
+    http::{request::Parts, StatusCode},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
     Extension, Form, Json, Router,
 };
@@ -18,6 +19,29 @@ const SESSION_VALUE: &str = "authenticated";
 
 const LOGIN_HTML: &str = include_str!("./static/login.html");
 const LANDING_HTML: &str = include_str!("./static/landing.html");
+
+/// Extractor that enforces session authentication.
+/// Handlers that declare `_guard: AuthGuard` are protected; unauthenticated
+/// requests receive a redirect to `/login` instead of running the handler.
+struct AuthGuard;
+
+impl<S> FromRequestParts<S> for AuthGuard
+where
+    S: Send + Sync,
+{
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let jar = CookieJar::from_request_parts(parts, state)
+            .await
+            .map_err(|e| e.into_response())?;
+
+        match jar.get(SESSION_COOKIE) {
+            Some(c) if c.value() == SESSION_VALUE => Ok(AuthGuard),
+            _ => Err((StatusCode::FOUND, [("location", "/login")]).into_response()),
+        }
+    }
+}
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -118,9 +142,6 @@ async fn logout(jar: CookieJar) -> impl IntoResponse {
     )
 }
 
-async fn landing_page(jar: CookieJar) -> Result<Html<&'static str>, Redirect> {
-    match jar.get(SESSION_COOKIE) {
-        Some(c) if c.value() == SESSION_VALUE => Ok(Html(LANDING_HTML)),
-        _ => Err(Redirect::to("/login")),
-    }
+async fn landing_page(_guard: AuthGuard) -> Html<&'static str> {
+    Html(LANDING_HTML)
 }
