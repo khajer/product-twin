@@ -24,7 +24,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-COMPOSE_FILE="docker-compose.yml"
+COMPOSE_FILE=""  # set after runtime detection
 
 # Colors for output
 RED='\033[0;31m'
@@ -88,6 +88,7 @@ check_compose() {
             print_error "podman-compose not found. Install it with: pip install podman-compose"
             exit 1
         fi
+        COMPOSE_FILE="podman-compose.yml"
     else
         if docker compose version &>/dev/null 2>&1; then
             COMPOSE_CMD="docker compose"
@@ -97,6 +98,7 @@ check_compose() {
             print_error "Docker Compose is not installed. Please install Docker Compose."
             exit 1
         fi
+        COMPOSE_FILE="docker-compose.yml"
     fi
 }
 
