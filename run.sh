@@ -80,10 +80,13 @@ check_runtime() {
 
 check_compose() {
     if [[ "$CONTAINER_CMD" == "podman" ]]; then
-        if podman compose version &>/dev/null 2>&1; then
-            COMPOSE_CMD="podman compose"
-        elif command -v podman-compose &>/dev/null; then
+        # Prefer podman-compose: `podman compose` can silently delegate to an
+        # external provider (e.g. Docker Desktop's compose plugin), which talks
+        # to the Docker daemon instead of the podman machine and hangs on pull/up.
+        if command -v podman-compose &>/dev/null; then
             COMPOSE_CMD="podman-compose"
+        elif podman compose version &>/dev/null 2>&1; then
+            COMPOSE_CMD="podman compose"
         else
             print_error "podman-compose not found. Install it with: pip install podman-compose"
             exit 1
