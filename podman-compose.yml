@@ -11,6 +11,8 @@ services:
       - NEO4J_PASSWORD=password123
       - REDIS_URL=redis://redis:6379
       - SQLITE_PATH=/app/data/product-twin.db
+      - APP_USERNAME=admin
+      - APP_PASSWORD=changeme
     volumes:
       - sqlite-data:/app/data
     depends_on:
