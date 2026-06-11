@@ -1,0 +1,13 @@
+.graph-view-placeholder {
+  margin-top: 1.5rem;
+  padding: 3rem 1.5rem;
+  border: 2px dashed #ccc;
+  border-radius: 8px;
+  text-align: center;
+  color: #888;
+}
+
+.graph-view-placeholder h2 {
+  margin: 0 0 0.5rem;
+  color: #555;
+}

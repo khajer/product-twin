@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Product Twin is a proof-of-concept digital twin / knowledge graph system built with Rust, Neo4j, and Redis. The Rust service exposes an HTTP API (Axum), reads configuration from `.env`, and persists graph data in Neo4j.
+Product Twin is a proof-of-concept digital twin / knowledge graph system built with Rust, Neo4j, and Redis. The Rust service exposes a JSON API under `/api/*` (Axum), reads configuration from `.env`, persists graph data in Neo4j, and serves a React SPA (`frontend/`) for the UI.
 
 ## Commands
 
@@ -13,13 +13,25 @@ Product Twin is a proof-of-concept digital twin / knowledge graph system built w
 ```bash
 cargo build              # debug build
 cargo build --release    # release build
-cargo run                # run locally (requires .env)
+cargo run                # run API on :3000 (requires .env)
 RUST_LOG=info cargo run  # run with log output
 cargo test               # run tests
 cargo clippy             # lint
 ```
 
 Copy `.env.example` to `.env` and fill in values before running locally.
+
+### Frontend
+
+```bash
+cd frontend
+npm install     # install dependencies
+npm run dev     # Vite dev server on :5173, proxies /api to :3000
+npm run build   # production build -> frontend/dist (served by Axum)
+npm run lint    # eslint
+```
+
+For local development, run `cargo run` and `npm run dev` in separate terminals and browse `http://localhost:5173`. In production, Axum serves `frontend/dist` directly from `:3000`.
 
 ### Docker / Infrastructure
 
@@ -45,6 +57,10 @@ Access points when running:
 
 ```
 ┌──────────────────────────┐
+│  React SPA (frontend/)   │  :5173 dev (Vite) / served by Axum in prod
+└────────────┬─────────────┘
+             │ /api/* (fetch, credentials: include)
+┌────────────▼─────────────┐
 │  Rust / Axum HTTP server │  :3000
 │  (src/main.rs)           │
 │  tokio async runtime     │
@@ -57,20 +73,24 @@ Access points when running:
   Redis (planned, not yet wired)
 ```
 
+Routing in `src/main.rs`: `/api/*` routes (health, me, login, logout) return JSON; everything else falls back to `frontend/dist` (static assets, with `index.html` as the SPA fallback for client-side routes).
+
 ### Key files
 
 | Path | Role |
 |------|------|
-| `src/main.rs` | Entry point — Axum router, server startup |
-| `Cargo.toml` | Dependencies: axum 0.8, tokio, neo4rs 0.8, dotenvy, env_logger |
-| `docker-compose.yml` | Orchestrates app + Neo4j services |
-| `Dockerfile` | Multi-stage build: rust builder → debian bookworm-slim runtime |
-| `.env.example` | Template for `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `RUST_LOG` |
+| `src/main.rs` | Entry point — Axum router (`/api/*` JSON routes + SPA static fallback), server startup |
+| `Cargo.toml` | Dependencies: axum 0.8, tokio, neo4rs 0.8, tower-http (fs), dotenvy, env_logger |
+| `frontend/` | React + TypeScript SPA (Vite), built to `frontend/dist` |
+| `docker-compose.yml` | Orchestrates app + Neo4j + Redis services |
+| `Dockerfile` | Multi-stage build: node frontend builder → rust builder → debian bookworm-slim runtime |
+| `.env.example` | Template for `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `REDIS_URL`, `APP_USERNAME`, `APP_PASSWORD`, `RUST_LOG` |
 | `run.sh` | Convenience wrapper around docker compose |
 
 ## Current State
 
 - Neo4j connection via `neo4rs` is declared but not yet used in business logic.
 - Redis is listed in the README as planned but has no Cargo dependency yet.
-- Only one route exists: `GET /` → `"Hello, World!"`.
+- Auth is a simple cookie session (`session=authenticated`) checked against `APP_USERNAME`/`APP_PASSWORD`; `/api/me` reports status, `/api/login` and `/api/logout` set/clear the cookie.
+- The dashboard has a placeholder section reserved for future Neo4j graph visualization (`frontend/src/components/GraphViewPlaceholder.tsx`).
 - No tests have been written yet.

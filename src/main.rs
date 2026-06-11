@@ -1,9 +1,8 @@
 use axum::{
-    extract::{FromRequestParts, Query},
-    http::{request::Parts, StatusCode},
-    response::{Html, IntoResponse, Redirect, Response},
+    http::StatusCode,
+    response::IntoResponse,
     routing::{get, post},
-    Extension, Form, Json, Router,
+    Extension, Json, Router,
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use dotenvy::dotenv;
@@ -11,37 +10,12 @@ use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tower_http::services::{ServeDir, ServeFile};
 
 mod db;
 
 const SESSION_COOKIE: &str = "session";
 const SESSION_VALUE: &str = "authenticated";
-
-const LOGIN_HTML: &str = include_str!("./static/login.html");
-const LANDING_HTML: &str = include_str!("./static/landing.html");
-
-/// Extractor that enforces session authentication.
-/// Handlers that declare `_guard: AuthGuard` are protected; unauthenticated
-/// requests receive a redirect to `/login` instead of running the handler.
-struct AuthGuard;
-
-impl<S> FromRequestParts<S> for AuthGuard
-where
-    S: Send + Sync,
-{
-    type Rejection = Response;
-
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let jar = CookieJar::from_request_parts(parts, state)
-            .await
-            .map_err(|e| e.into_response())?;
-
-        match jar.get(SESSION_COOKIE) {
-            Some(c) if c.value() == SESSION_VALUE => Ok(AuthGuard),
-            _ => Err((StatusCode::FOUND, [("location", "/login")]).into_response()),
-        }
-    }
-}
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -51,15 +25,20 @@ struct HealthResponse {
     version: String,
 }
 
+#[derive(Serialize)]
+struct MeResponse {
+    authenticated: bool,
+}
+
 #[derive(Deserialize)]
-struct LoginForm {
+struct LoginRequest {
     username: String,
     password: String,
 }
 
-#[derive(Deserialize)]
-struct LoginQuery {
-    error: Option<String>,
+#[derive(Serialize)]
+struct ErrorResponse {
+    error: String,
 }
 
 #[tokio::main]
@@ -75,12 +54,19 @@ async fn main() {
     let sqlite = db::connect(&db_path).expect("failed to open SQLite database");
     info!("SQLite database opened at {db_path}");
 
-    let app = Router::new()
-        .route("/", get(hello_world))
+    let api_routes = Router::new()
         .route("/health", get(health_check))
-        .route("/login", get(login_page).post(login_submit))
+        .route("/me", get(me))
+        .route("/login", post(login_submit))
         .route("/logout", post(logout))
-        .route("/landing", get(landing_page))
+        .fallback(api_not_found);
+
+    let serve_dir = ServeDir::new("frontend/dist")
+        .fallback(ServeFile::new("frontend/dist/index.html"));
+
+    let app = Router::new()
+        .nest("/api", api_routes)
+        .fallback_service(serve_dir)
         .layer(Extension(sqlite));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
@@ -88,9 +74,13 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn hello_world() -> &'static str {
-    debug!("hello_world handler called");
-    "Hello, World!"
+async fn api_not_found() -> impl IntoResponse {
+    (
+        StatusCode::NOT_FOUND,
+        Json(ErrorResponse {
+            error: "not found".to_string(),
+        }),
+    )
 }
 
 async fn health_check() -> Json<HealthResponse> {
@@ -106,22 +96,25 @@ async fn health_check() -> Json<HealthResponse> {
     })
 }
 
-async fn login_page(Query(q): Query<LoginQuery>) -> Html<String> {
-    let error_banner = if q.error.is_some() {
-        r#"<p class="error">Invalid username or password</p>"#
-    } else {
-        ""
-    };
-    Html(LOGIN_HTML.replace("{{error_banner}}", error_banner))
+async fn me(jar: CookieJar) -> Json<MeResponse> {
+    debug!("me handler called");
+    let authenticated = matches!(jar.get(SESSION_COOKIE), Some(c) if c.value() == SESSION_VALUE);
+    Json(MeResponse { authenticated })
 }
 
-async fn login_submit(jar: CookieJar, Form(form): Form<LoginForm>) -> impl IntoResponse {
+async fn login_submit(jar: CookieJar, Json(form): Json<LoginRequest>) -> impl IntoResponse {
     let expected_user = env::var("APP_USERNAME").unwrap_or_default();
     let expected_pass = env::var("APP_PASSWORD").unwrap_or_default();
 
     if expected_user.is_empty() || expected_pass.is_empty() {
         warn!("APP_USERNAME or APP_PASSWORD is not set; rejecting login");
-        return Redirect::to("/login?error=1").into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "invalid credentials".to_string(),
+            }),
+        )
+            .into_response();
     }
 
     if form.username == expected_user && form.password == expected_pass {
@@ -129,19 +122,28 @@ async fn login_submit(jar: CookieJar, Form(form): Form<LoginForm>) -> impl IntoR
             .path("/")
             .http_only(true)
             .build();
-        (jar.add(cookie), Redirect::to("/landing")).into_response()
+        (
+            jar.add(cookie),
+            Json(MeResponse { authenticated: true }),
+        )
+            .into_response()
     } else {
-        Redirect::to("/login?error=1").into_response()
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "invalid credentials".to_string(),
+            }),
+        )
+            .into_response()
     }
 }
 
 async fn logout(jar: CookieJar) -> impl IntoResponse {
+    let removal = Cookie::build(SESSION_COOKIE).path("/").build();
     (
-        jar.remove(Cookie::from(SESSION_COOKIE)),
-        Redirect::to("/login"),
+        jar.remove(removal),
+        Json(MeResponse {
+            authenticated: false,
+        }),
     )
-}
-
-async fn landing_page(_guard: AuthGuard) -> Html<&'static str> {
-    Html(LANDING_HTML)
 }
