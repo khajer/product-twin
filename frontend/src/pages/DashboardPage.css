@@ -1,0 +1,32 @@
+.dashboard-page {
+  min-height: 100vh;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #e5e4e7;
+}
+
+.dashboard-header h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.dashboard-header button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.dashboard-header button:hover {
+  background: #f5f5f5;
+}
+
+.dashboard-page main {
+  padding: 1.5rem;
+}

@@ -1,5 +1,20 @@
 # =============================================================================
-# Stage 1: Build the Rust application
+# Stage 1: Build the frontend (Vite + React)
+# =============================================================================
+FROM node:22-slim AS frontend-builder
+
+WORKDIR /app/frontend
+
+# Copy manifests first to leverage Docker layer caching
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+# Copy the rest of the frontend source and build
+COPY frontend/ ./
+RUN npm run build
+
+# =============================================================================
+# Stage 2: Build the Rust application
 # =============================================================================
 FROM rust:1.91-slim AS builder
 
@@ -24,7 +39,7 @@ RUN touch src/main.rs
 RUN cargo build --release
 
 # =============================================================================
-# Stage 2: Create a minimal runtime image
+# Stage 3: Create a minimal runtime image
 # =============================================================================
 FROM debian:bookworm-slim
 
@@ -38,6 +53,9 @@ WORKDIR /app
 # Copy the compiled binary from the builder stage
 COPY --from=builder /app/target/release/product-twin .
 
+# Copy the built frontend assets
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+
 # Expose the application port
 EXPOSE 3000
 
@@ -46,7 +64,7 @@ ENV RUST_LOG=info
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
+  CMD curl -f http://localhost:3000/api/health || exit 1
 
 # Run the binary
 CMD ["./product-twin"]
