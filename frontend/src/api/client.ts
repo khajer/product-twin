@@ -25,3 +25,20 @@ export async function logout(): Promise<void> {
     credentials: 'include',
   });
 }
+
+export interface UploadedFile {
+  filename: string;
+  size: number;
+}
+
+export async function uploadFile(file: File): Promise<UploadedFile | null> {
+  const body = new FormData();
+  body.append('file', file);
+  const res = await fetch(`${API_BASE}/upload`, { method: 'POST', credentials: 'include', body });
+  return res.ok ? ((await res.json()) as UploadedFile) : null;
+}
+
+export async function listUploads(): Promise<UploadedFile[]> {
+  const res = await fetch(`${API_BASE}/uploads`, { credentials: 'include' });
+  return res.ok ? ((await res.json()) as UploadedFile[]) : [];
+}

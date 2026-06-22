@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { logout } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { GraphViewPlaceholder } from '../components/GraphViewPlaceholder';
@@ -24,6 +24,7 @@ export function DashboardPage() {
       </header>
       <main>
         <p>Welcome to your digital twin dashboard.</p>
+        <Link to="/upload">Upload File</Link>
         <GraphViewPlaceholder />
       </main>
     </div>

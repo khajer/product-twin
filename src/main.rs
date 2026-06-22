@@ -1,9 +1,11 @@
 use axum::{
+    extract::Multipart,
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Extension, Json, Router,
 };
+use std::path::Path;
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use dotenvy::dotenv;
 use log::{debug, info, warn};
@@ -41,6 +43,12 @@ struct ErrorResponse {
     error: String,
 }
 
+#[derive(Serialize)]
+struct UploadedFile {
+    filename: String,
+    size: u64,
+}
+
 #[tokio::main]
 async fn main() {
     dotenv().ok();
@@ -59,6 +67,8 @@ async fn main() {
         .route("/me", get(me))
         .route("/login", post(login_submit))
         .route("/logout", post(logout))
+        .route("/upload", post(upload_file))
+        .route("/uploads", get(list_uploads))
         .fallback(api_not_found);
 
     let serve_dir = ServeDir::new("frontend/dist")
@@ -146,4 +156,79 @@ async fn logout(jar: CookieJar) -> impl IntoResponse {
             authenticated: false,
         }),
     )
+}
+
+fn is_authenticated(jar: &CookieJar) -> bool {
+    matches!(jar.get(SESSION_COOKIE), Some(c) if c.value() == SESSION_VALUE)
+}
+
+async fn upload_file(jar: CookieJar, mut multipart: Multipart) -> impl IntoResponse {
+    if !is_authenticated(&jar) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse { error: "unauthorized".into() }),
+        )
+            .into_response();
+    }
+
+    tokio::fs::create_dir_all("data/uploads").await.ok();
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let raw_name = field.file_name().unwrap_or("upload").to_string();
+        // ponytail: basename-only to prevent path traversal
+        let filename = Path::new(&raw_name)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("upload")
+            .to_string();
+
+        let data = match field.bytes().await {
+            Ok(b) => b,
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse { error: e.to_string() }),
+                )
+                    .into_response()
+            }
+        };
+        let size = data.len() as u64;
+
+        if let Err(e) = tokio::fs::write(format!("data/uploads/{filename}"), &data).await {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse { error: e.to_string() }),
+            )
+                .into_response();
+        }
+
+        return Json(UploadedFile { filename, size }).into_response();
+    }
+
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse { error: "no file provided".into() }),
+    )
+        .into_response()
+}
+
+async fn list_uploads(jar: CookieJar) -> impl IntoResponse {
+    if !is_authenticated(&jar) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse { error: "unauthorized".into() }),
+        )
+            .into_response();
+    }
+
+    let mut files: Vec<UploadedFile> = Vec::new();
+    if let Ok(mut dir) = tokio::fs::read_dir("data/uploads").await {
+        while let Ok(Some(entry)) = dir.next_entry().await {
+            let size = entry.metadata().await.map(|m| m.len()).unwrap_or(0);
+            let filename = entry.file_name().to_string_lossy().to_string();
+            files.push(UploadedFile { filename, size });
+        }
+    }
+    files.sort_by(|a, b| a.filename.cmp(&b.filename));
+    Json(files).into_response()
 }

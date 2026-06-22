@@ -8,7 +8,7 @@ tokio = { version = "1", features = ["full"] }
 neo4rs = "0.8"
 redis = { version = "0.27", features = ["tokio-comp"] }
 dotenvy = "0.15"
-axum = "0.8"
+axum = { version = "0.8", features = ["multipart"] }
 axum-extra = { version = "0.10", features = ["cookie"] }
 serde = { version = "1", features = ["derive"] }
 log = "0.4"
