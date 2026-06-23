@@ -27,6 +27,12 @@ export function UploadPage() {
   }
 
   function pickFile(f: File) {
+    const ext = f.name.split('.').pop()?.toLowerCase();
+    if (ext !== 'csv' && ext !== 'txt') {
+      setStatus('error');
+      setMessage('Only .csv and .txt files are allowed.');
+      return;
+    }
     setFile(f);
     setStatus('idle');
     setMessage('');
@@ -92,12 +98,13 @@ export function UploadPage() {
                 {file.name} <span className="upload-file-size">{formatSize(file.size)}</span>
               </span>
             ) : (
-              'Click or drag a file here'
+              'Click or drag a .csv or .txt file here'
             )}
             <input
               id="file-input"
               ref={inputRef}
               type="file"
+              accept=".csv,.txt"
               onChange={handleChange}
             />
           </label>

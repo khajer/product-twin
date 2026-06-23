@@ -182,6 +182,19 @@ async fn upload_file(jar: CookieJar, mut multipart: Multipart) -> impl IntoRespo
             .unwrap_or("upload")
             .to_string();
 
+        let ext = Path::new(&filename)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if ext != "csv" && ext != "txt" {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(ErrorResponse { error: "only .csv and .txt files are allowed".into() }),
+            )
+                .into_response();
+        }
+
         let data = match field.bytes().await {
             Ok(b) => b,
             Err(e) => {
