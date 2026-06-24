@@ -42,3 +42,13 @@ export async function listUploads(): Promise<UploadedFile[]> {
   const res = await fetch(`${API_BASE}/uploads`, { credentials: 'include' });
   return res.ok ? ((await res.json()) as UploadedFile[]) : [];
 }
+
+export async function importFile(filename: string): Promise<{ imported: number } | null> {
+  const res = await fetch(`${API_BASE}/import`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename }),
+  });
+  return res.ok ? ((await res.json()) as { imported: number }) : null;
+}

@@ -6,9 +6,11 @@ use axum::{
     Extension, Json, Router,
 };
 use std::path::Path;
+use std::sync::Arc;
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use dotenvy::dotenv;
 use log::{debug, info, warn};
+use neo4rs::Graph;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -49,6 +51,16 @@ struct UploadedFile {
     size: u64,
 }
 
+#[derive(Deserialize)]
+struct ImportRequest {
+    filename: String,
+}
+
+#[derive(Serialize)]
+struct ImportResult {
+    imported: usize,
+}
+
 #[tokio::main]
 async fn main() {
     dotenv().ok();
@@ -62,6 +74,15 @@ async fn main() {
     let sqlite = db::connect(&db_path).expect("failed to open SQLite database");
     info!("SQLite database opened at {db_path}");
 
+    let neo4j_uri = env::var("NEO4J_URI").unwrap_or_else(|_| "bolt://localhost:7687".into());
+    let neo4j_user = env::var("NEO4J_USER").unwrap_or_else(|_| "neo4j".into());
+    let neo4j_pass = env::var("NEO4J_PASSWORD").unwrap_or_else(|_| "password123".into());
+    let graph = Graph::new(&neo4j_uri, &neo4j_user, &neo4j_pass)
+        .await
+        .expect("failed to connect to Neo4j");
+    let graph = Arc::new(graph);
+    info!("Connected to Neo4j at {neo4j_uri}");
+
     let api_routes = Router::new()
         .route("/health", get(health_check))
         .route("/me", get(me))
@@ -69,6 +90,7 @@ async fn main() {
         .route("/logout", post(logout))
         .route("/upload", post(upload_file))
         .route("/uploads", get(list_uploads))
+        .route("/import", post(import_file))
         .fallback(api_not_found);
 
     let serve_dir = ServeDir::new("frontend/dist")
@@ -77,7 +99,8 @@ async fn main() {
     let app = Router::new()
         .nest("/api", api_routes)
         .fallback_service(serve_dir)
-        .layer(Extension(sqlite));
+        .layer(Extension(sqlite))
+        .layer(Extension(graph));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     info!("Server running on http://localhost:3000");
@@ -244,4 +267,66 @@ async fn list_uploads(jar: CookieJar) -> impl IntoResponse {
     }
     files.sort_by(|a, b| a.filename.cmp(&b.filename));
     Json(files).into_response()
+}
+
+async fn import_file(
+    jar: CookieJar,
+    Extension(graph): Extension<Arc<Graph>>,
+    Json(req): Json<ImportRequest>,
+) -> impl IntoResponse {
+    if !is_authenticated(&jar) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse { error: "unauthorized".into() }),
+        )
+            .into_response();
+    }
+
+    // basename-only to prevent path traversal
+    let filename = Path::new(&req.filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_string();
+    if filename.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "invalid filename".into() })).into_response();
+    }
+
+    let path = format!("data/uploads/{filename}");
+    let content = match tokio::fs::read_to_string(&path).await {
+        Ok(c) => c,
+        Err(_) => return (StatusCode::NOT_FOUND, Json(ErrorResponse { error: "file not found".into() })).into_response(),
+    };
+
+    let mut rdr = csv::Reader::from_reader(content.as_bytes());
+    let headers: Vec<String> = match rdr.headers() {
+        Ok(h) => h.iter()
+            .map(|s| s.chars().filter(|c| c.is_alphanumeric() || *c == '_').collect())
+            .collect(),
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e.to_string() })).into_response(),
+    };
+
+    if headers.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "no headers found".into() })).into_response();
+    }
+
+    let props = headers.iter().map(|h| format!("{h}: ${h}")).collect::<Vec<_>>().join(", ");
+    let query_str = format!("CREATE (n:Entity {{{props}}})", props = props);
+
+    let mut imported = 0usize;
+    for result in rdr.records() {
+        let record = match result {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let mut q = neo4rs::query(&query_str);
+        for (h, v) in headers.iter().zip(record.iter()) {
+            q = q.param(h.as_str(), v);
+        }
+        if graph.run(q).await.is_ok() {
+            imported += 1;
+        }
+    }
+
+    Json(ImportResult { imported }).into_response()
 }

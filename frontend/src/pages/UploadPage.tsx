@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listUploads, uploadFile, type UploadedFile } from '../api/client';
+import { importFile, listUploads, uploadFile, type UploadedFile } from '../api/client';
 import './UploadPage.css';
 
 type Status = 'idle' | 'uploading' | 'done' | 'error';
@@ -18,6 +18,8 @@ export function UploadPage() {
   const [message, setMessage] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [uploads, setUploads] = useState<UploadedFile[]>([]);
+  const [importing, setImporting] = useState<string | null>(null);
+  const [importResults, setImportResults] = useState<Record<string, string>>({});
   const navigate = useNavigate();
 
   useEffect(() => { void fetchUploads(); }, []);
@@ -76,6 +78,16 @@ export function UploadPage() {
     }
   }
 
+  async function handleImport(filename: string) {
+    setImporting(filename);
+    const result = await importFile(filename).catch(() => null);
+    setImportResults((prev) => ({
+      ...prev,
+      [filename]: result ? `Imported ${result.imported} nodes` : 'Import failed',
+    }));
+    setImporting(null);
+  }
+
   return (
     <div className="upload-page">
       <header className="upload-header">
@@ -128,6 +140,16 @@ export function UploadPage() {
                 <li key={f.filename}>
                   <span className="upload-history-name">{f.filename}</span>
                   <span className="upload-file-size">{formatSize(f.size)}</span>
+                  <button
+                    type="button"
+                    disabled={importing === f.filename}
+                    onClick={() => void handleImport(f.filename)}
+                  >
+                    {importing === f.filename ? 'Importing…' : 'Import'}
+                  </button>
+                  {importResults[f.filename] && (
+                    <span className="upload-file-size">{importResults[f.filename]}</span>
+                  )}
                 </li>
               ))}
             </ul>
